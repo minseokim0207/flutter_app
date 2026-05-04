@@ -21,7 +21,7 @@ class MapViewer extends StatefulWidget {
 
 class _MapViewerState extends State<MapViewer> {
   // 이제 Offset(좌표) 대신 MapMarker(좌표+이름) 객체들을 저장합니다.
-  List<MapMarker> _markers = [];
+  final List<MapMarker> _markers = [];
 
   @override
   Widget build(BuildContext context) {
@@ -143,25 +143,40 @@ class _MapViewerState extends State<MapViewer> {
   }
 }
 
+// Flutter 코드
 void sendToRos(String name, double px, double py) {
+  // 1. 내 지도의 진짜 설정값 (map.yaml 및 이미지 원본)
   double resolution = 0.05; 
-  double originX = -10;
-  double originY = -10;
-  double imageHeight = 640; 
+  double originX = -1.27;   
+  double originY = -2.44;   
+  
+  // ❗ auto_map.png 원본 이미지의 픽셀 크기 
+  double mapWidth = 125.0;  
+  double mapHeight = 116.0; 
 
-  double realX = (px * resolution) + originX;
-  double realY = ((imageHeight - py) * resolution) + originY;
+  // 2. Flutter 앱 화면에 띄운 이미지 위젯의 크기
+  double uiWidth = 640.0;
+  double uiHeight = 640.0;
+
+  // =========================================================
+  //  [핵심 추가] 640 기준의 터치 좌표를 116 기준의 진짜 픽셀로 압축!
+  // =========================================================
+  double originalPx = px * (mapWidth / uiWidth);
+  double originalPy = py * (mapHeight / uiHeight);
+
+  // 3. 압축된 진짜 픽셀을 미터(m)로 변환
+  double realX = (originalPx * resolution) + originX;
+  double realY = ((mapHeight - originalPy) * resolution) + originY;
 
   Map<String, dynamic> locationData = {
     "name": name,
-    "x": realX,
-    "y": realY
+    "x": realX, 
+    "y": realY  
   };
 
-  // 1. ROS2 Rosbridge 서버와 WebSocket으로 연결합니다. (기본 포트 9090)
+  // 4. ROS2로 전송 (아래는 기존 코드와 동일)
   final channel = WebSocketChannel.connect(Uri.parse('ws://127.0.0.1:9090'));
-
-  // 2. Rosbridge 규격에 맞게 메시지를 포장합니다.
+  
   var rosMessage = {
     "op": "publish",
     "topic": "/save_location",
@@ -170,12 +185,9 @@ void sendToRos(String name, double px, double py) {
     }
   };
 
-  // 3. 데이터를 전송합니다.
   channel.sink.add(jsonEncode(rosMessage));
-  
-  print("ROS2로 전송 완료: $name");
+  print("ROS2로 전송 완료: $name (미터 변환 x: ${realX.toStringAsFixed(2)}, y: ${realY.toStringAsFixed(2)})");
 
-  // 4. 전송 후 채널을 닫아줍니다. (단발성 전송용)
   Future.delayed(const Duration(seconds: 1), () {
     channel.sink.close();
   });
